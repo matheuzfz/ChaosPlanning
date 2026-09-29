@@ -163,6 +163,14 @@ async def websocket_room_endpoint(
                         item=payload.item,
                     )
 
+                elif action == "update_profile":
+                    await room_manager.update_profile(
+                        room_id=room_id,
+                        user_id=user_id,
+                        user_name=payload.user_name,
+                        avatar=payload.avatar,
+                    )
+
                 elif action == "custom_event":
                     event_name = (payload.custom_data or {}).get("name", "custom_event")
                     await room_manager.route_custom_event(

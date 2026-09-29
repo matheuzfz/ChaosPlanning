@@ -96,6 +96,8 @@ class WebSocketActionPayload(BaseModel):
     master_token: Optional[str] = None
     target_user_id: Optional[str] = None
     item: Optional[str] = None
+    user_name: Optional[str] = None
+    avatar: Optional[str] = None
     custom_data: Optional[Dict[str, Any]] = None
 
 
@@ -103,6 +105,7 @@ class WebSocketActionPayload(BaseModel):
 class Participant:
     user_id: str
     user_name: str
+    avatar: Optional[str] = None
     websocket: Optional[WebSocket] = None
     is_master: bool = False
     vote: Optional[int] = None
@@ -111,6 +114,7 @@ class Participant:
         return {
             "user_id": self.user_id,
             "user_name": self.user_name,
+            "avatar": self.avatar,
             "is_master": self.is_master,
             "has_voted": self.vote is not None,
             "vote": self.vote if reveal_vote else None,
@@ -418,3 +422,35 @@ class RoomManager:
         }
         await self.broadcast(room_id=room_id, message=payload)
         return payload
+
+    async def update_profile(
+        self,
+        room_id: str,
+        user_id: str,
+        user_name: Optional[str] = None,
+        avatar: Optional[str] = None,
+    ) -> None:
+        """
+        Atualiza o nickname e/ou avatar do usuário e transmite a atualização para todos na sala.
+        """
+        room = self.get_room(room_id)
+        participant = room.get_participant(user_id)
+        if not participant:
+            raise KeyError(f"Usuário '{user_id}' não encontrado na sala.")
+
+        if user_name and user_name.strip():
+            participant.user_name = user_name.strip()
+        if avatar:
+            participant.avatar = avatar
+
+        await self.broadcast(
+            room_id=room_id,
+            message={
+                "event": "profile_updated",
+                "user_id": user_id,
+                "user_name": participant.user_name,
+                "avatar": participant.avatar,
+                "room_state": room.get_state(),
+            },
+        )
+
