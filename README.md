@@ -6,6 +6,24 @@ ChaosPlanning é uma ferramenta interativa e dinâmica de Planning Poker projeta
 
 ---
 
+## 🚀 Acesso ao Ambiente de Produção (Temporário)
+
+A aplicação já se encontra implementada e disponível para testes da equipa na AWS (EC2 via Docker Compose)!
+
+🌐 **Link de Acesso Direto**: [http://35.175.178.176](http://35.175.178.176)
+
+> [!NOTE]
+> **Aviso sobre Conexão HTTP (Sem SSL/HTTPS)**:
+> Por se tratar de uma instância temporária de desenvolvimento e validação que ainda não possui certificado SSL (HTTPS) configurado, o seu navegador poderá apresentar um alerta de site **"Não seguro"**. Pode avançar tranquilamente: o acesso é totalmente permitido e seguro para efeitos de teste.
+
+### 🎮 Como Testar com a Equipa:
+1. **Aceder à Aplicação**: Abra o link [http://35.175.178.176](http://35.175.178.176) no navegador.
+2. **Criar uma Sala**: Qualquer membro da equipa pode aceder ao link e criar uma nova sala com PIN numérico de segurança.
+3. **Partilhar as Credenciais**: Copie o **ID da Sala** e o **PIN** e partilhe com os colegas para que todos entrem na mesma mesa em tempo real.
+4. **Realizar o Planning Poker**: Comecem a estimar histórias com cartas Fibonacci, animações de arremesso de itens e cálculo automático da moda estatística!
+
+---
+
 ## 🚀 Funcionalidades Principais
 
 - **Mesa de Poker em Tempo Real**: Conexão bidirecional via WebSockets com sincronização instantânea de estado entre todos os membros da equipe.
@@ -47,8 +65,10 @@ ChaosPlanning é uma ferramenta interativa e dinâmica de Planning Poker projeta
 - **React Router DOM (v6)**: Gerenciamento de rotas declarativas (`/`, `/room/:roomId`, `/master/:roomId`).
 - **Lucide React**: Ícones limpos e modernos.
 
-### CI / CD
-- **GitHub Actions**: Pipeline automatizada com **Path Filtering** (`dorny/paths-filter`) para execução condicional de testes do backend e build do frontend.
+### CI / CD & Infraestrutura
+- **Terraform**: Infraestrutura como código (IaC) para provisionamento de instâncias EC2 e Security Groups na AWS.
+- **Docker & Docker Compose**: Containerização e orquestração de microsserviços (Frontend Nginx + Backend FastAPI).
+- **GitHub Actions**: Pipeline automatizada com aprovação manual para ambiente de produção, testes do backend e build do frontend.
 
 ---
 
@@ -144,6 +164,17 @@ npm run build
 
 ---
 
+### 4. Executar com Docker Compose (Ambiente Completo)
+
+```bash
+# Na raiz do repositório
+docker-compose up --build
+```
+
+O frontend ficará disponível em **`http://localhost`** e o backend em **`http://localhost:8000`**.
+
+---
+
 ## 🧭 Rotas da Aplicação
 
 | Rota | Descrição |
@@ -154,15 +185,12 @@ npm run build
 
 ---
 
-## 🤖 Integração Contínua (CI)
+## 🤖 Integração Contínua e Deploy (CI/CD)
 
-A pipeline do GitHub Actions em `.github/workflows/ci.yml` executa validações inteligentes a cada push e pull request na branch `main`:
-- **Path Filtering**: 
-  - `backend-test` é acionado apenas quando há alterações em `backend/**` ou `.github/workflows/**`.
-  - `frontend-test` é acionado apenas quando há alterações em `frontend/**` ou `.github/workflows/**`.
-- **Validações**:
-  - Testes unitários do Python via `pytest`.
-  - Instalação limpa das dependências e build de produção do frontend com `npm run build`.
+A pipeline do GitHub Actions em `.github/workflows/ci.yml` unifica a validação da aplicação e o deploy de infraestrutura na AWS:
+- **`app-tests`**: Executa testes de Python e build do Frontend com **Path Filtering** inteligente.
+- **`terraform-plan`**: Inicializa, valida e gera o plano de execução (`tfplan`) sempre que há alterações em `infraestrutura/**`.
+- **`terraform-apply`**: Executa a aplicação do Terraform em ambiente `production` após aprovação manual por revisores obrigatórios configurados no GitHub.
 
 ---
 
