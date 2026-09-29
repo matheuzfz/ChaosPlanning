@@ -72,7 +72,7 @@ resource "aws_security_group" "app_sg" {
   }
 
   egress {
-    description = "Saída total"
+    description = "All outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
