@@ -12,20 +12,9 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Obter a AMI mais recente do Ubuntu 22.04 LTS
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099979779448"] # Canonical
-
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
+# Obter a AMI do Ubuntu via AWS SSM Parameter Store
+data "aws_ssm_parameter" "ubuntu_ami" {
+  name = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
 }
 
 # Obter a VPC por omissão da conta
@@ -87,7 +76,7 @@ resource "aws_security_group" "app_sg" {
 
 # Instância EC2
 resource "aws_instance" "app_server" {
-  ami                    = data.aws_ami.ubuntu.id
+  ami                    = data.aws_ssm_parameter.ubuntu_ami.value
   instance_type          = var.instance_type
   vpc_security_group_ids = [aws_security_group.app_sg.id]
 
