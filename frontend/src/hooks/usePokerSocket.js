@@ -39,8 +39,8 @@ export function usePokerSocket(roomId, userName, pin, masterToken = null) {
     }
 
     const encodedName = encodeURIComponent(userName);
-    const tokenQuery = masterToken ? `&master_token=${encodeURIComponent(masterToken)}` : '';
-    const wsUrl = `ws://localhost:8000/ws/${roomId}?user_id=${userId}&user_name=${encodedName}&pin=${pin}${tokenQuery}`;
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/${roomId}?user_id=${userId}&user_name=${encodedName}&pin=${pin}${tokenQuery}`;
 
     console.log(`[usePokerSocket] Conectando a ${wsUrl}...`);
     const ws = new WebSocket(wsUrl);
