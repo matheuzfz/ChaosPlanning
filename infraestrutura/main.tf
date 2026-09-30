@@ -74,10 +74,22 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
+# Key Pair SSH
+resource "aws_key_pair" "app_key" {
+  key_name   = "${var.project_name}-key"
+  public_key = var.public_key
+
+  tags = {
+    Name    = "${var.project_name}-key"
+    Project = var.project_name
+  }
+}
+
 # Instância EC2
 resource "aws_instance" "app_server" {
   ami                    = data.aws_ssm_parameter.ubuntu_ami.value
   instance_type          = var.instance_type
+  key_name               = aws_key_pair.app_key.key_name
   vpc_security_group_ids = [aws_security_group.app_sg.id]
 
   user_data = <<-EOF

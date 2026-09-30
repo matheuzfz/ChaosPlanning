@@ -81,6 +81,8 @@ jobs:
     needs: app-tests
     if: needs.app-tests.outputs.infra == 'true'
     runs-on: ubuntu-latest
+    env:
+      TF_VAR_public_key: ${{ secrets.EC2_PUBLIC_KEY }}
     defaults:
       run:
         working-directory: ./infraestrutura
@@ -120,6 +122,10 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production
+    env:
+      TF_VAR_public_key: ${{ secrets.EC2_PUBLIC_KEY }}
+    outputs:
+      instance_public_ip: ${{ steps.get-ip.outputs.instance_public_ip }}
     defaults:
       run:
         working-directory: ./infraestrutura
@@ -137,6 +143,8 @@ jobs:
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Download Plan Artifact
         uses: actions/download-artifact@v4
@@ -149,3 +157,29 @@ jobs:
 
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
+
+      - name: Get EC2 Public IP
+        id: get-ip
+        run: |
+          echo "instance_public_ip=$(terraform output -raw instance_public_ip)" >> $GITHUB_OUTPUT
+
+  deploy-app:
+    name: Deploy Application to EC2
+    needs: terraform-apply
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy application via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ needs.terraform-apply.outputs.instance_public_ip }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            if [ ! -d "/home/ubuntu/ChaosPlanning" ]; then
+              git clone https://github.com/matheuzfz/ChaosPlanning.git /home/ubuntu/ChaosPlanning
+            fi
+            cd /home/ubuntu/ChaosPlanning
+            git pull
+            sudo docker-compose up --build -d

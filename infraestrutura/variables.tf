@@ -15,3 +15,8 @@ variable "project_name" {
   type        = string
   default     = "ChaosPlanning"
 }
+
+variable "public_key" {
+  description = "Chave pública SSH para acesso à instância EC2"
+  type        = string
+}
