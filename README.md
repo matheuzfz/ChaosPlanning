@@ -6,24 +6,6 @@ ChaosPlanning é uma ferramenta interativa e dinâmica de Planning Poker projeta
 
 ---
 
-## 🚀 Acesso ao Ambiente de Produção (Temporário)
-
-A aplicação já se encontra implementada e disponível para testes da equipa na AWS (EC2 via Docker Compose)!
-
-🌐 **Link de Acesso Direto**: [http://35.175.178.176](http://35.175.178.176)
-
-> [!NOTE]
-> **Aviso sobre Conexão HTTP (Sem SSL/HTTPS)**:
-> Por se tratar de uma instância temporária de desenvolvimento e validação que ainda não possui certificado SSL (HTTPS) configurado, o seu navegador poderá apresentar um alerta de site **"Não seguro"**. Pode avançar tranquilamente: o acesso é totalmente permitido e seguro para efeitos de teste.
-
-### 🎮 Como Testar com a Equipa:
-1. **Aceder à Aplicação**: Abra o link [http://35.175.178.176](http://35.175.178.176) no navegador.
-2. **Criar uma Sala**: Qualquer membro da equipa pode aceder ao link e criar uma nova sala com PIN numérico de segurança.
-3. **Partilhar as Credenciais**: Copie o **ID da Sala** e o **PIN** e partilhe com os colegas para que todos entrem na mesma mesa em tempo real.
-4. **Realizar o Planning Poker**: Comecem a estimar histórias com cartas Fibonacci, animações de arremesso de itens e cálculo automático da moda estatística!
-
----
-
 ## 🚀 Funcionalidades Principais
 
 - **Mesa de Poker em Tempo Real**: Conexão bidirecional via WebSockets com sincronização instantânea de estado entre todos os membros da equipe.
