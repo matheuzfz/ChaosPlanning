@@ -84,6 +84,17 @@ export function PokerTable({
       ? numericVotes.reduce((sum, v) => sum + v, 0) / numericVotes.length
       : null;
 
+  // Agrupa os nomes dos jogadores pela carta escolhida: { 5: ['Matheus', 'João'], 8: ['Carol'] }
+  const votesByCard = participants.reduce((acc, p) => {
+    if (p.vote !== null && p.vote !== undefined) {
+      (acc[p.vote] = acc[p.vote] || []).push(p.user_name);
+    }
+    return acc;
+  }, {});
+  const groupedVotes = Object.entries(votesByCard).sort(
+    ([a], [b]) => Number(a) - Number(b)
+  );
+
   return (
     <div
       ref={tableRef}
@@ -242,7 +253,7 @@ export function PokerTable({
       })}
 
       {/* Centro da Mesa: Status, Logo ou Resultados da Rodada */}
-      <div className="text-center z-10 px-4 max-w-xs sm:max-w-sm pointer-events-none">
+      <div className="text-center z-10 px-4 max-w-xs sm:max-w-md pointer-events-none">
         {votesRevealed ? (
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
@@ -278,10 +289,17 @@ export function PokerTable({
                 )}
               </div>
             </div>
-            {modes && modes.length > 1 && (
-              <p className="text-[10px] text-amber-200/90 mt-1 font-medium">
-                Empate estatístico na frequência máxima!
-              </p>
+
+            {/* Quem votou em quê: nomes agrupados por carta */}
+            {groupedVotes.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-white/15 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+                {groupedVotes.map(([card, names]) => (
+                  <div key={card} className="text-[11px] sm:text-xs text-white/90 leading-tight">
+                    <span className="font-black font-mono text-amber-300">Carta {card}:</span>{' '}
+                    <span className="font-medium">{names.join(', ')}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </motion.div>
         ) : (
@@ -383,6 +401,9 @@ export function Room() {
    * e envia o voto via WebSocket.
    */
   const handleCardClick = (value, event) => {
+    // Mesa virada: não é mais permitido trocar o voto
+    if (roomState.votesRevealed) return;
+
     const btnRect = event.currentTarget.getBoundingClientRect();
     const startX = btnRect.left + btnRect.width / 2;
     const startY = btnRect.top + btnRect.height / 2;
@@ -784,24 +805,34 @@ export function Room() {
           <div className="flex items-end justify-center gap-2.5 sm:gap-4 md:gap-5 pt-3 pb-1">
             {POKER_CARDS.map((value) => {
               const isSelected = selectedCard === value;
+              const isLocked = roomState.votesRevealed;
               return (
                 <button
                   key={value}
                   type="button"
-                  onClick={(e) => handleCardClick(value, e)}
+                  disabled={isLocked}
+                  onClick={isLocked ? undefined : (e) => handleCardClick(value, e)}
                   className={`
                     group relative flex flex-col justify-between
                     w-12 h-18 sm:w-16 sm:h-24 md:w-20 md:h-28
                     p-1.5 sm:p-2.5 rounded-xl select-none
-                    bg-[#fdfbf7] text-slate-900
+                    text-slate-900
                     border border-slate-300 dark:border-slate-400
                     transition-all duration-200 ease-out
                     ${
+                      isLocked
+                        ? 'bg-slate-300 dark:bg-slate-600 opacity-50 grayscale cursor-not-allowed'
+                        : 'bg-[#fdfbf7]'
+                    }
+                    ${
                       isSelected
                         ? '-translate-y-5 sm:-translate-y-6 shadow-[0_15px_30px_rgba(245,158,11,0.35)] ring-4 ring-amber-400 scale-105 z-30'
-                        : 'shadow-md hover:-translate-y-2 hover:shadow-xl hover:border-slate-400'
+                        : isLocked
+                          ? 'shadow-none'
+                          : 'shadow-md hover:-translate-y-2 hover:shadow-xl hover:border-slate-400'
                     }
                   `}
+                  title={isLocked ? 'Votos revelados: aguarde a próxima rodada' : undefined}
                 >
                   <div className="flex flex-col items-start leading-none">
                     <span className="text-[11px] sm:text-xs font-black font-mono text-slate-800">

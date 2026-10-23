@@ -117,6 +117,9 @@ async def websocket_room_endpoint(
                 action = payload.action
 
                 if action == "vote":
+                    # Mesa já virada: ignora o voto e não altera nada na memória
+                    if room_manager.get_room(room_id).votes_revealed:
+                        continue
                     if payload.vote is None:
                         raise ValueError("O campo 'vote' é obrigatório para registrar voto.")
                     await room_manager.cast_vote(
