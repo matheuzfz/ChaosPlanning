@@ -139,6 +139,13 @@ async def websocket_room_endpoint(
                         master_token=effective_token,
                     )
 
+                elif action == "reset_votes":
+                    effective_token = payload.master_token or master_token or ""
+                    await room_manager.reset_votes(
+                        room_id=room_id,
+                        master_token=effective_token,
+                    )
+
                 elif action == "throw_item":
                     if not payload.target_user_id or not payload.item:
                         raise ValueError(

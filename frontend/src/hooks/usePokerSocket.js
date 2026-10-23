@@ -181,6 +181,19 @@ export function usePokerSocket(roomId, userName, masterToken = null) {
     }
   }, [masterToken]);
 
+  const resetVotes = useCallback((token) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      // 'action' é o campo lido pelo backend; 'type' acompanha o contrato pedido
+      const payload = {
+        action: 'reset_votes',
+        type: 'reset_votes',
+        master_token: token || masterToken || '',
+      };
+      console.log('[usePokerSocket] Resetando votação');
+      socketRef.current.send(JSON.stringify(payload));
+    }
+  }, [masterToken]);
+
   return {
     isConnected,
     connectionError,
@@ -192,6 +205,7 @@ export function usePokerSocket(roomId, userName, masterToken = null) {
     throwItem,
     revealVotes,
     clearVotes,
+    resetVotes,
     socketRef,
   };
 }

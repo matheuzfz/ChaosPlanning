@@ -16,6 +16,7 @@ import {
   Sparkles,
   Eye,
   RefreshCw,
+  RotateCcw,
   Users,
 } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
@@ -55,6 +56,11 @@ export function getDefaultAvatar(identifier = '') {
   return AVATAR_PRESETS[Math.abs(hash) % AVATAR_PRESETS.length];
 }
 
+// Formata a média: inteiro sem casas decimais; quebrado com no máximo uma casa
+export function formatAverage(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 /**
  * Componente da Mesa de Poker com avatares de personagens distribuídos trigonometricamente.
  */
@@ -68,6 +74,15 @@ export function PokerTable({
   onCurrentAvatarClick = null,
 }) {
   const count = participants.length;
+
+  // Média dos votos revelados: ignora votos não numéricos ('?', null etc.)
+  const numericVotes = participants
+    .map((p) => p.vote)
+    .filter((v) => typeof v === 'number' && Number.isFinite(v));
+  const average =
+    numericVotes.length > 0
+      ? numericVotes.reduce((sum, v) => sum + v, 0) / numericVotes.length
+      : null;
 
   return (
     <div
@@ -98,6 +113,7 @@ export function PokerTable({
         const top = 50 + ry * Math.sin(angle);
 
         const hasVoted = Boolean(player.has_voted || (currentVote !== null && player.isCurrent));
+        const isReady = hasVoted && !votesRevealed;
         const voteValue = player.vote ?? (player.isCurrent ? currentVote : null);
         const avatarEmoji = player.avatar || getDefaultAvatar(player.user_id || player.user_name);
 
@@ -129,6 +145,11 @@ export function PokerTable({
                   shadow-lg flex items-center justify-center
                   text-2xl sm:text-3xl md:text-3.5xl
                   transition-all duration-200
+                  ${
+                    isReady
+                      ? 'ring-4 ring-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.85)]'
+                      : ''
+                  }
                   ${
                     player.isCurrent
                       ? 'cursor-pointer hover:scale-115 hover:ring-4 hover:ring-emerald-400 active:scale-95'
@@ -205,6 +226,17 @@ export function PokerTable({
             <span className="mt-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-slate-900/80 text-white backdrop-blur-sm shadow max-w-[85px] sm:max-w-[105px] truncate">
               {player.user_name}
             </span>
+
+            {/* Badge de status: já votou (cartas ainda ocultas) */}
+            {isReady && (
+              <motion.span
+                initial={{ scale: 0.6, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="mt-0.5 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold bg-emerald-500 text-white shadow-md whitespace-nowrap"
+              >
+                ✅ Pronto
+              </motion.span>
+            )}
           </div>
         );
       })}
@@ -220,6 +252,15 @@ export function PokerTable({
             <span className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
               Votos Revelados
             </span>
+
+            {/* Média em destaque */}
+            <div className="mt-1 flex items-center justify-center gap-2">
+              <span className="text-xs sm:text-sm text-white/80 font-medium">Média:</span>
+              <span className="px-3 py-0.5 rounded-lg bg-emerald-400 text-slate-950 font-black font-mono text-xl sm:text-2xl shadow">
+                {average !== null ? formatAverage(average) : '—'}
+              </span>
+            </div>
+
             <div className="mt-1 flex items-center justify-center gap-2">
               <span className="text-xs sm:text-sm text-white/80 font-medium">Moda:</span>
               <div className="flex gap-1.5">
@@ -287,7 +328,7 @@ export function Room() {
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
 
   // Hook de conexão WebSocket (só conecta depois de haver um apelido)
-  const { isConnected, connectionError, roomState, userId, sendVote, sendProfileUpdate, revealVotes, clearVotes } =
+  const { isConnected, connectionError, roomState, userId, sendVote, sendProfileUpdate, revealVotes, clearVotes, resetVotes } =
     usePokerSocket(roomId, currentUserName, masterToken);
 
   const [selectedCard, setSelectedCard] = useState(null);
@@ -700,7 +741,7 @@ export function Room() {
         <div className="max-w-4xl mx-auto flex flex-col items-center">
           {/* Controles exclusivos do Scrum Master */}
           {isMaster && (
-            <div className="w-full max-w-md flex items-center justify-center gap-3 mb-3">
+            <div className="w-full max-w-xl flex items-center justify-center gap-3 mb-3">
               <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
                 <Users className="w-4 h-4" />
                 <span>{roomState.totalVotes}/{roomState.totalParticipants}</span>
@@ -725,6 +766,14 @@ export function Room() {
               >
                 <RefreshCw className="w-4 h-4" />
                 Nova Rodada
+              </button>
+              <button
+                type="button"
+                onClick={() => resetVotes(masterToken)}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-amber-800 dark:text-amber-200 bg-amber-100 hover:bg-amber-200 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-800 transition shadow-sm active:scale-95"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Resetar Votação
               </button>
             </div>
           )}

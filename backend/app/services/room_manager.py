@@ -154,6 +154,18 @@ class Room:
             participant.vote = None
         self.votes_revealed = False
 
+    def reset_votes(self, token: str) -> None:
+        """
+        Reseta a votação a meio da rodada: zera o voto de cada jogador (None)
+        e volta a ocultar as cartas. Ação exclusiva do portador do master_token.
+        """
+        if token != self.master_token:
+            raise UnauthorizedActionError("Apenas o portador do master_token pode resetar a votação.")
+
+        for participant in self.participants.values():
+            participant.vote = None
+        self.votes_revealed = False
+
     def get_state(self) -> Dict[str, Any]:
         """Retorna o estado serializável da sala para os clientes."""
         submitted_votes = [
@@ -339,6 +351,18 @@ class RoomManager:
             room_id=room_id,
             message={
                 "event": "votes_cleared",
+                "room_state": room.get_state(),
+            },
+        )
+
+    async def reset_votes(self, room_id: str, master_token: str) -> None:
+        """Reseta os votos da rodada em andamento e transmite o estado limpo a todos."""
+        room = self.get_room(room_id)
+        room.reset_votes(master_token)
+        await self.broadcast(
+            room_id=room_id,
+            message={
+                "event": "votes_reset",
                 "room_state": room.get_state(),
             },
         )
