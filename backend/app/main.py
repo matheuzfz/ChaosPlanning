@@ -9,9 +9,7 @@ from pydantic import ValidationError
 
 try:
     from app.services.room_manager import (
-        CreateRoomRequest,
         CreateRoomResponse,
-        InvalidPinError,
         InvalidVoteError,
         RoomManager,
         RoomNotFoundError,
@@ -20,9 +18,7 @@ try:
     )
 except ModuleNotFoundError:
     from backend.app.services.room_manager import (  # type: ignore
-        CreateRoomRequest,
         CreateRoomResponse,
-        InvalidPinError,
         InvalidVoteError,
         RoomManager,
         RoomNotFoundError,
@@ -61,20 +57,14 @@ async def health_check() -> Dict[str, str]:
     status_code=status.HTTP_201_CREATED,
     tags=["Rooms"],
 )
-async def create_room(request: Optional[CreateRoomRequest] = None) -> CreateRoomResponse:
+async def create_room() -> CreateRoomResponse:
     """
-    Cria uma nova sala de Planning Poker com PIN de segurança (4 a 6 dígitos).
-    Retorna o identificador da sala, o PIN e o master_token confidencial.
+    Cria uma nova sala de Planning Poker com ID único curto.
+    Retorna o identificador da sala e o master_token confidencial do Scrum Master.
     """
-    pin = request.pin if request else None
-    try:
-        room = room_manager.create_room(pin=pin)
-    except (InvalidPinError, ValueError) as err:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
-
+    room = room_manager.create_room()
     return CreateRoomResponse(
         room_id=room.room_id,
-        pin=room.pin,
         master_token=room.master_token,
     )
 
@@ -98,7 +88,6 @@ async def websocket_room_endpoint(
     room_id: str,
     user_id: str = Query(..., description="ID identificador único do usuário"),
     user_name: str = Query(..., description="Nome de exibição do usuário"),
-    pin: str = Query(..., description="PIN de segurança para acesso à sala"),
     master_token: Optional[str] = Query(default=None, description="Token de mestre da sala (opcional)"),
 ) -> None:
     """
@@ -111,14 +100,10 @@ async def websocket_room_endpoint(
             room_id=room_id,
             user_id=user_id,
             user_name=user_name,
-            pin=pin,
             master_token=master_token,
         )
     except RoomNotFoundError:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Sala não encontrada.")
-        return
-    except InvalidPinError:
-        # A conexão já é rejeitada e fechada pelo connect_user
         return
     except Exception as exc:
         await websocket.close(code=status.WS_1011_INTERNAL_ERROR, reason=str(exc))
@@ -204,7 +189,7 @@ async def websocket_room_endpoint(
                 })
 
     except WebSocketDisconnect:
-        await room_manager.disconnect_user(room_id=room_id, user_id=user_id)
+        await room_manager.disconnect_user(room_id=room_id, user_id=user_id, websocket=websocket)
 
 
 # ---------------------------------------------------------------------------

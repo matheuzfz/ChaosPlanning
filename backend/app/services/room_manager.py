@@ -1,11 +1,11 @@
 from collections import Counter
 from dataclasses import dataclass
-import re
 import secrets
+import uuid
 from typing import Any, Dict, List, Optional, Set
 
-from fastapi import WebSocket, status
-from pydantic import BaseModel, Field, field_validator
+from fastapi import WebSocket
+from pydantic import BaseModel
 
 # Escala permitida para votação (Fibonacci simplificado)
 ALLOWED_VOTES: Set[int] = {1, 2, 3, 5, 8, 13}
@@ -13,11 +13,6 @@ ALLOWED_VOTES: Set[int] = {1, 2, 3, 5, 8, 13}
 
 class InvalidVoteError(ValueError):
     """Exceção levantada quando um voto não pertence à escala permitida."""
-    pass
-
-
-class InvalidPinError(ValueError):
-    """Exceção levantada quando o PIN informado não tem de 4 a 6 dígitos numéricos."""
     pass
 
 
@@ -29,16 +24,6 @@ class RoomNotFoundError(KeyError):
 class UnauthorizedActionError(PermissionError):
     """Exceção levantada quando uma ação restrita é requisitada sem o master_token correto."""
     pass
-
-
-def validate_pin(pin: str) -> str:
-    """
-    Valida se o PIN informado consiste estritamente em uma sequência
-    de 4 a 6 dígitos numéricos.
-    """
-    if not isinstance(pin, str) or not re.fullmatch(r"\d{4,6}", pin):
-        raise InvalidPinError("O PIN deve conter de 4 a 6 dígitos numéricos.")
-    return pin
 
 
 def validate_vote(vote: int) -> int:
@@ -70,23 +55,8 @@ def calculate_mode(votes: List[int]) -> List[int]:
 
 
 # Modelos Pydantic para validação de dados
-class CreateRoomRequest(BaseModel):
-    pin: Optional[str] = Field(
-        default=None,
-        description="PIN numérico de segurança (4 a 6 dígitos). Se não informado, é gerado automaticamente.",
-    )
-
-    @field_validator("pin")
-    @classmethod
-    def check_pin(cls, value: Optional[str]) -> Optional[str]:
-        if value is not None:
-            return validate_pin(value)
-        return value
-
-
 class CreateRoomResponse(BaseModel):
     room_id: str
-    pin: str
     master_token: str
 
 
@@ -126,9 +96,8 @@ class Room:
     Representa uma sala de Planning Poker efêmera mantida em memória.
     """
 
-    def __init__(self, room_id: str, pin: str, master_token: str):
+    def __init__(self, room_id: str, master_token: str):
         self.room_id: str = room_id
-        self.pin: str = validate_pin(pin)
         self.master_token: str = master_token
         self.participants: Dict[str, Participant] = {}
         self.votes_revealed: bool = False
@@ -213,22 +182,18 @@ class RoomManager:
     def __init__(self):
         self.rooms: Dict[str, Room] = {}
 
-    def create_room(self, pin: Optional[str] = None, room_id: Optional[str] = None) -> Room:
+    def create_room(self, room_id: Optional[str] = None) -> Room:
         """
-        Cria uma nova sala gerando um PIN seguro caso não informado,
-        além de um master_token secreto.
+        Cria uma nova sala com ID único curto (UUID) e um master_token secreto
+        para o criador. O acesso é feito apenas pelo link da sala.
         """
-        if pin is None:
-            # PIN numérico aleatório de 6 dígitos formatado
-            pin = f"{secrets.randbelow(1_000_000):06d}"
-        else:
-            validate_pin(pin)
-
         if room_id is None:
-            room_id = secrets.token_hex(4)
+            room_id = uuid.uuid4().hex[:8]
+            while room_id in self.rooms:
+                room_id = uuid.uuid4().hex[:8]
 
         master_token = secrets.token_urlsafe(32)
-        room = Room(room_id=room_id, pin=pin, master_token=master_token)
+        room = Room(room_id=room_id, master_token=master_token)
         self.rooms[room_id] = room
         return room
 
@@ -244,20 +209,13 @@ class RoomManager:
         room_id: str,
         user_id: str,
         user_name: str,
-        pin: str,
         master_token: Optional[str] = None,
     ) -> Participant:
         """
-        Autentica o PIN da sala, estabelece conexão WebSocket e registra o usuário.
+        Estabelece a conexão WebSocket e registra o usuário na sala.
+        Quem apresentar o master_token correto torna-se Scrum Master.
         """
         room = self.get_room(room_id)
-
-        if room.pin != pin:
-            await websocket.close(
-                code=status.WS_1008_POLICY_VIOLATION,
-                reason="PIN de segurança incorreto.",
-            )
-            raise InvalidPinError("PIN de segurança incorreto.")
 
         await websocket.accept()
 
@@ -291,11 +249,27 @@ class RoomManager:
 
         return participant
 
-    async def disconnect_user(self, room_id: str, user_id: str) -> None:
-        """Remove o usuário e notifica os restantes."""
+    async def disconnect_user(
+        self,
+        room_id: str,
+        user_id: str,
+        websocket: Optional[WebSocket] = None,
+    ) -> None:
+        """
+        Remove o usuário e notifica os restantes.
+        Se a sala ficar sem conexões, ela é eliminada da memória.
+        Quando 'websocket' é informado, só remove se for a conexão atual do usuário
+        (evita que uma conexão antiga derrube uma reconexão recente).
+        """
         if room_id in self.rooms:
             room = self.rooms[room_id]
+            current = room.get_participant(user_id)
+            if websocket is not None and current and current.websocket is not websocket:
+                return
             participant = room.remove_participant(user_id)
+            if not room.participants:
+                del self.rooms[room_id]
+                return
             if participant:
                 await self.broadcast(
                     room_id=room_id,

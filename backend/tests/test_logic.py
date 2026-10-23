@@ -3,27 +3,23 @@ import pytest
 try:
     from app.services.room_manager import (
         ALLOWED_VOTES,
-        InvalidPinError,
         InvalidVoteError,
         Participant,
         Room,
         RoomManager,
         UnauthorizedActionError,
         calculate_mode,
-        validate_pin,
         validate_vote,
     )
 except ModuleNotFoundError:
     from backend.app.services.room_manager import (  # type: ignore
         ALLOWED_VOTES,
-        InvalidPinError,
         InvalidVoteError,
         Participant,
         Room,
         RoomManager,
         UnauthorizedActionError,
         calculate_mode,
-        validate_pin,
         validate_vote,
     )
 
@@ -102,7 +98,7 @@ def test_invalid_types_rejected(invalid_type_vote):
 
 def test_room_cast_vote_rejects_out_of_scale():
     """Valida se a sala rejeita o registro de um voto fora da escala."""
-    room = Room(room_id="room-123", pin="1234", master_token="secret-token")
+    room = Room(room_id="room-123", master_token="secret-token")
     user = Participant(user_id="user-1", user_name="Alice")
     room.add_participant(user)
 
@@ -124,7 +120,7 @@ def test_room_cast_vote_rejects_out_of_scale():
 
 def test_master_token_security_and_reveal():
     """Valida se apenas o portador do master_token pode revelar votos e se a moda é computada."""
-    room = Room(room_id="room-poker", pin="9876", master_token="correct-master-token")
+    room = Room(room_id="room-poker", master_token="correct-master-token")
     alice = Participant(user_id="alice", user_name="Alice")
     bob = Participant(user_id="bob", user_name="Bob")
     charlie = Participant(user_id="charlie", user_name="Charlie")
@@ -153,7 +149,7 @@ def test_master_token_security_and_reveal():
 
 def test_master_token_clear_votes():
     """Valida se apenas o mestre pode limpar os votos e reiniciar a mesa."""
-    room = Room(room_id="room-poker", pin="9876", master_token="correct-master-token")
+    room = Room(room_id="room-poker", master_token="correct-master-token")
     alice = Participant(user_id="alice", user_name="Alice")
     room.add_participant(alice)
     room.cast_vote("alice", 13)
@@ -171,35 +167,34 @@ def test_master_token_clear_votes():
 
 
 # =====================================================================
-# Testes de validação de PIN de segurança (4 a 6 dígitos)
-# =====================================================================
-
-@pytest.mark.parametrize("valid_pin", ["1234", "0000", "99999", "123456", "054321"])
-def test_valid_pins(valid_pin: str):
-    """Garante a validação de PINs com 4, 5 ou 6 dígitos numéricos."""
-    assert validate_pin(valid_pin) == valid_pin
-
-
-@pytest.mark.parametrize("invalid_pin", ["123", "1234567", "abcd", "12a4", "12 34", "", "12345678"])
-def test_invalid_pins(invalid_pin: str):
-    """Garante a rejeição de PINs fora do padrão (tamanho != 4..6 ou caracteres não numéricos)."""
-    with pytest.raises(InvalidPinError):
-        validate_pin(invalid_pin)
-
-
-# =====================================================================
 # Testes do RoomManager
 # =====================================================================
 
 def test_room_manager_create_room():
-    """Valida a criação de sala, geração automática de PIN e master_token seguro."""
+    """Valida a criação de sala com ID curto único e master_token seguro (sem PIN)."""
     manager = RoomManager()
     room = manager.create_room()
 
-    assert len(room.pin) in (4, 5, 6)
-    assert room.pin.isdigit()
+    assert len(room.room_id) == 8
+    assert not hasattr(room, "pin")
     assert len(room.master_token) > 20
     assert manager.get_room(room.room_id) == room
+    assert manager.create_room().room_id != room.room_id
+
+
+@pytest.mark.anyio
+async def test_room_is_deleted_when_last_user_disconnects():
+    """Valida que a sala é eliminada da memória quando o último participante sai."""
+    manager = RoomManager()
+    room = manager.create_room()
+    room.add_participant(Participant(user_id="a", user_name="Alice"))
+    room.add_participant(Participant(user_id="b", user_name="Bob"))
+
+    await manager.disconnect_user(room.room_id, "a")
+    assert room.room_id in manager.rooms
+
+    await manager.disconnect_user(room.room_id, "b")
+    assert room.room_id not in manager.rooms
 
 
 # =====================================================================
@@ -210,7 +205,7 @@ def test_room_manager_create_room():
 async def test_throw_item_event_routing():
     """Valida o roteamento do evento throw_item entre dois usuários."""
     manager = RoomManager()
-    room = manager.create_room(pin="1234")
+    room = manager.create_room()
     alice = Participant(user_id="user-a", user_name="Alice")
     bob = Participant(user_id="user-b", user_name="Bob")
     room.add_participant(alice)
@@ -234,7 +229,7 @@ async def test_throw_item_event_routing():
 async def test_throw_item_target_not_found():
     """Valida que o evento falha se o usuário de destino não estiver na sala."""
     manager = RoomManager()
-    room = manager.create_room(pin="1234")
+    room = manager.create_room()
     alice = Participant(user_id="user-a", user_name="Alice")
     room.add_participant(alice)
 

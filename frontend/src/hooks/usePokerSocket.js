@@ -4,13 +4,16 @@ import { useEffect, useRef, useState, useCallback } from 'react';
  * Hook de comunicação em tempo real com o backend via WebSocket nativo.
  *
  * @param {string} roomId - Identificador da sala
- * @param {string} userName - Nome do participante
- * @param {string} pin - PIN numérico de segurança da sala
+ * @param {string} userName - Nome/apelido do participante (a conexão só abre quando preenchido)
  * @param {string} [masterToken] - Token confidencial de Scrum Master (opcional)
  */
-export function usePokerSocket(roomId, userName, pin, masterToken = null) {
+export function usePokerSocket(roomId, userName, masterToken = null) {
   const socketRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionError, setConnectionError] = useState(null);
+  const userNameRef = useRef(userName);
+  userNameRef.current = userName;
+  const hasName = Boolean(userName);
   const [lastMessage, setLastMessage] = useState(null);
   const [roomState, setRoomState] = useState({
     roomId: roomId || '',
@@ -34,15 +37,17 @@ export function usePokerSocket(roomId, userName, pin, masterToken = null) {
   const userId = getUserId();
 
   useEffect(() => {
-    if (!roomId || !userName || !pin) {
+    if (!roomId || !hasName) {
       return;
     }
 
-    const encodedName = encodeURIComponent(userName);
+    setConnectionError(null);
+    const encodedName = encodeURIComponent(userNameRef.current);
+    const tokenQuery = masterToken ? `&master_token=${encodeURIComponent(masterToken)}` : '';
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws/${roomId}?user_id=${userId}&user_name=${encodedName}&pin=${pin}${tokenQuery}`;
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/${roomId}?user_id=${userId}&user_name=${encodedName}${tokenQuery}`;
 
-    console.log(`[usePokerSocket] Conectando a ${wsUrl}...`);
+    console.log(`[usePokerSocket] Conectando à sala '${roomId}'...`);
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
@@ -80,6 +85,10 @@ export function usePokerSocket(roomId, userName, pin, masterToken = null) {
     ws.onclose = (event) => {
       console.log(`[usePokerSocket] Conexão WebSocket encerrada. Código: ${event.code}`);
       setIsConnected(false);
+      // 1008: sala inexistente (link inválido ou sala já encerrada)
+      if (event.code === 1008) {
+        setConnectionError('Sala não encontrada ou já encerrada.');
+      }
     };
 
     return () => {
@@ -87,7 +96,7 @@ export function usePokerSocket(roomId, userName, pin, masterToken = null) {
         ws.close();
       }
     };
-  }, [roomId, userName, pin, masterToken, userId]);
+  }, [roomId, hasName, masterToken, userId]);
 
   /**
    * Envia o voto do jogador para a sala.
@@ -174,6 +183,7 @@ export function usePokerSocket(roomId, userName, pin, masterToken = null) {
 
   return {
     isConnected,
+    connectionError,
     lastMessage,
     roomState,
     userId,

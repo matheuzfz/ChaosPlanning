@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useParams, useLocation, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sun,
@@ -14,6 +14,9 @@ import {
   Pencil,
   X,
   Sparkles,
+  Eye,
+  RefreshCw,
+  Users,
 } from 'lucide-react';
 import { useTheme } from '../hooks/useTheme';
 import { usePokerSocket } from '../hooks/usePokerSocket';
@@ -263,17 +266,15 @@ export function PokerTable({
  */
 export function Room() {
   const { roomId } = useParams();
-  const location = useLocation();
   const { toggleTheme, isDark } = useTheme();
 
-  // Recupera credenciais iniciais
-  const searchParams = new URLSearchParams(location.search);
-  const initialUserName =
-    location.state?.userName ||
-    searchParams.get('userName') ||
-    sessionStorage.getItem('chaosplanning_user_name') ||
-    'Jogador';
-  const pin = location.state?.pin || searchParams.get('pin') || '0000';
+  // Scrum Master: o master_token é guardado na sessão de quem criou a sala
+  const masterToken = sessionStorage.getItem(`chaosplanning_master_${roomId}`) || '';
+  const isMaster = Boolean(masterToken);
+
+  // Apelido salvo (criador da sala ou convidado que já entrou); vazio => pede o apelido
+  const initialUserName = sessionStorage.getItem('chaosplanning_user_name') || '';
+  const [joinName, setJoinName] = useState('');
 
   // Estados locais para edição inline de nickname e avatar
   const [currentUserName, setCurrentUserName] = useState(initialUserName);
@@ -285,12 +286,9 @@ export function Room() {
   });
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
 
-  // Hook de conexão WebSocket
-  const { isConnected, roomState, userId, sendVote, sendProfileUpdate } = usePokerSocket(
-    roomId,
-    currentUserName,
-    pin
-  );
+  // Hook de conexão WebSocket (só conecta depois de haver um apelido)
+  const { isConnected, connectionError, roomState, userId, sendVote, sendProfileUpdate, revealVotes, clearVotes } =
+    usePokerSocket(roomId, currentUserName, masterToken);
 
   const [selectedCard, setSelectedCard] = useState(null);
   const [flyingCard, setFlyingCard] = useState(null);
@@ -365,8 +363,19 @@ export function Room() {
     sendVote(value);
   };
 
-  const copyRoomId = () => {
-    navigator.clipboard.writeText(roomId || '');
+  // Convidado informa apenas o apelido para entrar na mesa
+  const handleJoin = (e) => {
+    e.preventDefault();
+    const name = joinName.trim();
+    if (!name) return;
+    sessionStorage.setItem('chaosplanning_user_name', name);
+    setCurrentUserName(name);
+    setTempName(name);
+  };
+
+  // Copia o link direto da sala para o Scrum Master compartilhar com a equipe
+  const copyRoomLink = () => {
+    navigator.clipboard.writeText(`${window.location.origin}/sala/${roomId}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -391,11 +400,63 @@ export function Room() {
         avatar: currentAvatar,
         has_voted: selectedCard !== null,
         vote: selectedCard,
-        is_master: false,
+        is_master: isMaster,
         isCurrent: true,
       },
     ];
   })();
+
+  // Sem apelido salvo: pede apenas o nome antes de entrar na mesa
+  if (!currentUserName) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
+        <form
+          onSubmit={handleJoin}
+          className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl p-6 space-y-4"
+        >
+          <div className="text-center">
+            <h1 className="text-xl font-extrabold bg-gradient-to-r from-emerald-600 via-teal-500 to-cyan-600 bg-clip-text text-transparent">
+              ChaosPlanning
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Você foi convidado para uma mesa. Como quer ser chamado?
+            </p>
+          </div>
+          <input
+            type="text"
+            autoFocus
+            required
+            maxLength={25}
+            placeholder="Seu apelido"
+            value={joinName}
+            onChange={(e) => setJoinName(e.target.value)}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+          />
+          <button
+            type="submit"
+            className="w-full py-3 px-4 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 shadow-md transition active:scale-[0.98]"
+          >
+            Entrar na Mesa
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  // Sala inexistente / já encerrada (todos saíram)
+  if (connectionError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-4 bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
+        <p className="text-sm font-semibold">{connectionError}</p>
+        <Link
+          to="/"
+          className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition"
+        >
+          Criar nova sala
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-200">
@@ -590,15 +651,16 @@ export function Room() {
 
         {/* Informações da Sala & Toggle de Tema */}
         <div className="flex items-center gap-2 sm:gap-4">
-          <button
-            onClick={copyRoomId}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono font-medium rounded-lg border border-slate-300 bg-slate-50 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 transition"
-            title="Clique para copiar o ID da sala"
-          >
-            <span className="text-slate-500 dark:text-slate-400">ID:</span>
-            <span className="font-bold text-slate-800 dark:text-slate-200">{roomId}</span>
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
-          </button>
+          {isMaster && (
+            <button
+              onClick={copyRoomLink}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60 transition"
+              title="Copiar o link da sala para enviar à equipe"
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? 'Link copiado!' : 'Copiar Link'}</span>
+            </button>
+          )}
 
           <div
             className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -636,6 +698,36 @@ export function Room() {
       {/* Deck de Cartas de Baralho Reais (sem overflow-hidden para não cortar a carta selecionada) */}
       <footer className="w-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 pt-3 pb-5 px-3 sm:px-6 z-20">
         <div className="max-w-4xl mx-auto flex flex-col items-center">
+          {/* Controles exclusivos do Scrum Master */}
+          {isMaster && (
+            <div className="w-full max-w-md flex items-center justify-center gap-3 mb-3">
+              <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                <Users className="w-4 h-4" />
+                <span>{roomState.totalVotes}/{roomState.totalParticipants}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => revealVotes(masterToken)}
+                disabled={roomState.votesRevealed}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-white transition shadow-md active:scale-95 ${
+                  roomState.votesRevealed
+                    ? 'bg-slate-400 dark:bg-slate-700 cursor-not-allowed opacity-60'
+                    : 'bg-indigo-600 hover:bg-indigo-700'
+                }`}
+              >
+                <Eye className="w-4 h-4" />
+                Revelar Cartas
+              </button>
+              <button
+                type="button"
+                onClick={() => clearVotes(masterToken)}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 transition shadow-sm active:scale-95"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Nova Rodada
+              </button>
+            </div>
+          )}
           <span className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">
             Deck de Votação (Fibonacci)
           </span>

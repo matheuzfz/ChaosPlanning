@@ -1,79 +1,45 @@
 import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
-import { Shield, Sparkles, Users, Crown, Sun, Moon } from 'lucide-react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Shield, Crown, Sun, Moon } from 'lucide-react';
 import { useTheme } from './hooks/useTheme';
 import { Room } from './pages/Room';
-import { Master } from './pages/Master';
 
 /**
- * Página Inicial (Home): Formulário de identificação e entrada na sala do ChaosPlanning.
+ * Página Inicial (Home): apenas o nome do Scrum Master e a criação da sala.
+ * Convidados entram diretamente pelo link da sala.
  */
 function Home() {
   const navigate = useNavigate();
   const { toggleTheme, isDark } = useTheme();
 
-  const [userName, setUserName] = useState('');
-  const [roomId, setRoomId] = useState('');
-  const [pin, setPin] = useState('');
-  const [masterToken, setMasterToken] = useState('');
+  const [userName, setUserName] = useState(sessionStorage.getItem('chaosplanning_user_name') || '');
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState('');
 
-  // Entra na sala como jogador regular
-  const handleJoinPlayer = (e) => {
+  // Cria a sala via API, guarda o master_token na sessão e entra como Scrum Master
+  const handleCreateRoom = async (e) => {
     e.preventDefault();
-    if (!userName.trim() || !roomId.trim() || !pin.trim()) {
-      setError('Por favor, preencha Nome, ID da Sala e o PIN de 4 a 6 dígitos.');
+    const name = userName.trim();
+    if (!name) {
+      setError('Informe o seu nome para criar a sala.');
       return;
     }
-    setError('');
-    navigate(`/room/${roomId.trim()}`, {
-      state: { userName: userName.trim(), pin: pin.trim() },
-    });
-  };
 
-  // Entra no painel como Scrum Master
-  const handleJoinMaster = () => {
-    if (!userName.trim() || !roomId.trim() || !pin.trim()) {
-      setError('Preencha Nome, ID da Sala e PIN para acessar o painel Master.');
-      return;
-    }
-    setError('');
-    navigate(`/master/${roomId.trim()}`, {
-      state: { userName: userName.trim(), pin: pin.trim(), masterToken: masterToken.trim() },
-    });
-  };
-
-  // Criação automática de sala via API FastAPI do ChaosPlanning
-  const handleCreateRoom = async () => {
     setIsCreating(true);
     setError('');
     try {
-      const payload = pin.trim() ? { pin: pin.trim() } : {};
-      const res = await fetch('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
+      const res = await fetch('/api/rooms', { method: 'POST' });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.detail || 'Falha ao criar sala no servidor.');
       }
 
       const data = await res.json();
-      setRoomId(data.room_id);
-      setPin(data.pin);
-      setMasterToken(data.master_token);
-      alert(`Sala ChaosPlanning criada!\nID: ${data.room_id}\nPIN: ${data.pin}\nMaster Token salvo.`);
+      sessionStorage.setItem('chaosplanning_user_name', name);
+      sessionStorage.setItem(`chaosplanning_master_${data.room_id}`, data.master_token);
+      navigate(`/sala/${data.room_id}`);
     } catch (err) {
-      console.warn('Backend indisponível no momento:', err.message);
-      // Fallback local caso o backend não esteja ativo
-      const mockId = Math.random().toString(36).substring(2, 8);
-      const mockPin = Math.floor(1000 + Math.random() * 9000).toString();
-      setRoomId(mockId);
-      setPin(mockPin);
-      setMasterToken('mock_master_token');
+      setError(err.message || 'Não foi possível criar a sala. Tente novamente.');
     } finally {
       setIsCreating(false);
     }
@@ -112,15 +78,19 @@ function Home() {
           </div>
         )}
 
-        {/* Formulário de Acesso */}
-        <form onSubmit={handleJoinPlayer} className="space-y-4">
+        <form onSubmit={handleCreateRoom} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
-              Nome do Jogador
+            <label
+              htmlFor="user-name"
+              className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1"
+            >
+              Seu Nome
             </label>
             <input
+              id="user-name"
               type="text"
               required
+              maxLength={25}
               placeholder="Ex: Matheus, Carol, Dev #1"
               value={userName}
               onChange={(e) => setUserName(e.target.value)}
@@ -128,80 +98,29 @@ function Home() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
-                ID da Sala
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="Ex: a1b2c3d4"
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1">
-                PIN de Acesso
-              </label>
-              <input
-                type="text"
-                required
-                maxLength={6}
-                placeholder="4 a 6 dígitos"
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm font-mono"
-              />
-            </div>
-          </div>
-
-          {/* Botões de Ação */}
-          <div className="pt-2 flex flex-col gap-2.5">
-            <button
-              type="submit"
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-sm text-white bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-lg transition active:scale-[0.98]"
-            >
-              <Users className="w-4 h-4" />
-              Entrar na Mesa de Votação
-            </button>
-
-            <button
-              type="button"
-              onClick={handleJoinMaster}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition"
-            >
-              <Crown className="w-4 h-4 text-amber-500" />
-              Acessar como Scrum Master
-            </button>
-          </div>
+          <button
+            id="create-room-button"
+            type="submit"
+            disabled={isCreating}
+            className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-xl font-bold text-base text-white bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-lg transition active:scale-[0.98] disabled:opacity-60"
+          >
+            <Crown className="w-5 h-5" />
+            {isCreating ? 'Criando sala...' : 'Criar Nova Sala (Scrum Master)'}
+          </button>
         </form>
 
-        {/* Separador */}
-        <div className="relative my-6 text-center">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-200 dark:border-slate-800" />
-          </div>
-          <span className="relative bg-white dark:bg-slate-900 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-            Ou comece uma nova rodada
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleCreateRoom}
-          disabled={isCreating}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-xs text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-60"
-        >
-          <Sparkles className="w-4 h-4 text-emerald-500" />
-          {isCreating ? 'Criando sala...' : 'Gerar Nova Sala & PIN'}
-        </button>
+        <p className="text-[11px] text-center text-slate-400 mt-5">
+          Depois de criar, copie o link da sala e envie para a equipe.
+        </p>
       </div>
     </div>
   );
+}
+
+// Links antigos (/room/:id e /master/:id) redirecionam para a nova rota
+function LegacyRoomRedirect() {
+  const { roomId } = useParams();
+  return <Navigate to={`/sala/${roomId}`} replace />;
 }
 
 /**
@@ -212,8 +131,9 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/room/:roomId" element={<Room />} />
-        <Route path="/master/:roomId" element={<Master />} />
+        <Route path="/sala/:roomId" element={<Room />} />
+        <Route path="/room/:roomId" element={<LegacyRoomRedirect />} />
+        <Route path="/master/:roomId" element={<LegacyRoomRedirect />} />
       </Routes>
     </BrowserRouter>
   );
