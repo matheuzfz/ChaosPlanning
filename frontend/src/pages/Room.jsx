@@ -49,9 +49,10 @@ export function getAvatarBgGradient(identifier = '') {
 }
 
 export function getDefaultAvatar(identifier = '') {
+  const seed = String(identifier || '');
   let hash = 0;
-  for (let i = 0; i < identifier.length; i++) {
-    hash = identifier.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < seed.length; i++) {
+    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
   }
   return AVATAR_PRESETS[Math.abs(hash) % AVATAR_PRESETS.length];
 }
@@ -126,7 +127,7 @@ export function PokerTable({
         const hasVoted = Boolean(player.has_voted || (currentVote !== null && player.isCurrent));
         const isReady = hasVoted && !votesRevealed;
         const voteValue = player.vote ?? (player.isCurrent ? currentVote : null);
-        const avatarEmoji = player.avatar || getDefaultAvatar(player.user_id || player.user_name);
+        const avatarEmoji = player.avatar || getDefaultAvatar(player.user_name || player.user_id);
 
         return (
           <div
@@ -150,7 +151,7 @@ export function PokerTable({
                 disabled={!player.isCurrent}
                 className={`
                   w-11 h-11 sm:w-13 sm:h-13 md:w-15 md:h-15 rounded-full
-                  bg-gradient-to-tr ${getAvatarBgGradient(player.user_name || String(index))}
+                  bg-gradient-to-tr ${getAvatarBgGradient(player.user_name || player.user_id || String(index))}
                   bg-white/80 dark:bg-slate-900/80 backdrop-blur-md
                   border-2 sm:border-3 border-white dark:border-slate-700
                   shadow-lg flex items-center justify-center
@@ -290,13 +291,16 @@ export function PokerTable({
               </div>
             </div>
 
-            {/* Quem votou em quê: nomes agrupados por carta */}
+            {/* Quem votou em quê: lista vertical agrupada por carta */}
             {groupedVotes.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-white/15 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+              <div className="mt-3 pt-2.5 border-t border-white/15 flex flex-col gap-1.5 w-full max-h-48 overflow-y-auto px-2">
                 {groupedVotes.map(([card, names]) => (
-                  <div key={card} className="text-[11px] sm:text-xs text-white/90 leading-tight">
-                    <span className="font-black font-mono text-amber-300">Carta {card}:</span>{' '}
-                    <span className="font-medium">{names.join(', ')}</span>
+                  <div
+                    key={card}
+                    className="text-xs text-white/90 flex items-center justify-between gap-3 bg-white/10 dark:bg-black/20 rounded-lg px-2.5 py-1.5 backdrop-blur-sm"
+                  >
+                    <span className="font-black font-mono text-amber-300 shrink-0">Carta {card}:</span>
+                    <span className="font-medium text-right truncate">{names.join(', ')}</span>
                   </div>
                 ))}
               </div>
@@ -340,8 +344,10 @@ export function Room() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(initialUserName);
 
+  // Avatar escolhido manualmente (null => avatar padrão determinístico derivado do user_id,
+  // idêntico em todos os clientes)
   const [currentAvatar, setCurrentAvatar] = useState(() => {
-    return sessionStorage.getItem('chaosplanning_avatar') || AVATAR_PRESETS[0];
+    return sessionStorage.getItem('chaosplanning_avatar') || null;
   });
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
 
@@ -363,6 +369,14 @@ export function Room() {
       nameInputRef.current.select();
     }
   }, [isEditingName]);
+
+  // Ao conectar, publica o avatar escolhido anteriormente para que os demais o vejam igual
+  useEffect(() => {
+    if (isConnected && currentAvatar) {
+      sendProfileUpdate(currentUserName, currentAvatar);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected]);
 
   // Reseta seleção de voto se a mesa foi limpa pelo Master
   useEffect(() => {
@@ -447,19 +461,21 @@ export function Room() {
     if (roomState.participants && roomState.participants.length > 0) {
       return roomState.participants.map((p) => {
         const isCurrent = p.user_id === userId;
+        const fallbackAvatar = getDefaultAvatar(isCurrent ? currentUserName : p.user_name);
         return {
           ...p,
           isCurrent,
           user_name: isCurrent ? currentUserName : p.user_name,
-          avatar: isCurrent ? currentAvatar : p.avatar,
+          avatar: isCurrent ? currentAvatar || p.avatar || fallbackAvatar : p.avatar || fallbackAvatar,
         };
       });
     }
+    const defaultOwnAvatar = currentAvatar || getDefaultAvatar(currentUserName);
     return [
       {
         user_id: userId,
         user_name: currentUserName,
-        avatar: currentAvatar,
+        avatar: defaultOwnAvatar,
         has_voted: selectedCard !== null,
         vote: selectedCard,
         is_master: isMaster,
