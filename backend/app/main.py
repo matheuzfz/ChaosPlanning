@@ -1,7 +1,10 @@
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 try:
@@ -202,3 +205,25 @@ async def websocket_room_endpoint(
 
     except WebSocketDisconnect:
         await room_manager.disconnect_user(room_id=room_id, user_id=user_id)
+
+
+# ---------------------------------------------------------------------------
+# Frontend estático (build do React) + fallback SPA
+# O diretório 'static' só existe na imagem Docker (ou após copiar o build).
+# ---------------------------------------------------------------------------
+STATIC_DIR = Path("static")
+
+if STATIC_DIR.is_dir():
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(full_path: str) -> FileResponse:
+        """Serve arquivos do build quando existirem; caso contrário devolve o index.html (React Router)."""
+        if full_path.startswith(("api/", "ws/")):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+        base = STATIC_DIR.resolve()
+        candidate = (base / full_path).resolve()
+        if candidate.is_file() and base in candidate.parents:
+            return FileResponse(candidate)
+        return FileResponse(base / "index.html")
+
+    app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

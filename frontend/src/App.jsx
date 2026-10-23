@@ -50,7 +50,7 @@ function Home() {
     setError('');
     try {
       const payload = pin.trim() ? { pin: pin.trim() } : {};
-      const res = await fetch('http://localhost:8000/api/rooms', {
+      const res = await fetch('/api/rooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
