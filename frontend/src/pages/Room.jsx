@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -27,7 +27,8 @@ export const POKER_CARDS = [1, 2, 3, 5, 8, 13];
 
 // Formata a média: inteiro sem casas decimais; quebrado com no máximo uma casa
 export function formatAverage(value) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  if (value === null || value === undefined || isNaN(value)) return '—';
+  return Number.isInteger(value) ? String(value) : Number(value).toFixed(1);
 }
 
 // Opções de arremesso de itens de caos (ChaosPlanning)
@@ -41,20 +42,22 @@ export const CHAOS_ITEMS = [
 /**
  * Menu flutuante (popover) para selecionar um item para arremessar
  */
-export function ItemThrowPopover({ targetName, onSelect, onClose }) {
+export function ItemThrowPopover({ targetName = '', onSelect, onClose }) {
+  if (!targetName) return null;
+
   return (
     <div
       className="absolute -top-12 sm:-top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-900/95 dark:bg-slate-800/95 border border-slate-700/60 shadow-[0_10px_30px_rgba(0,0,0,0.5)] backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 select-none pointer-events-auto"
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => e?.stopPropagation?.()}
     >
-      {CHAOS_ITEMS.map(({ emoji, label }) => (
+      {(CHAOS_ITEMS || []).map(({ emoji, label }) => (
         <button
           key={emoji}
           type="button"
           title={`Atirar ${label} em ${targetName}`}
           onClick={(e) => {
-            e.stopPropagation();
-            onSelect(emoji);
+            e?.stopPropagation?.();
+            if (onSelect) onSelect(emoji);
           }}
           className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-lg sm:text-xl bg-slate-800/80 hover:bg-slate-700 dark:hover:bg-slate-600 hover:scale-125 active:scale-95 transition-all duration-150 cursor-pointer shadow-sm"
         >
@@ -72,6 +75,8 @@ export function FlyingItem({ item, onComplete }) {
   const [active, setActive] = useState(false);
 
   useEffect(() => {
+    if (!item) return;
+
     // Força reflow no próximo frame para disparar a transição CSS
     const rafId = requestAnimationFrame(() => {
       setActive(true);
@@ -79,14 +84,20 @@ export function FlyingItem({ item, onComplete }) {
 
     // Remove o item após a duração da animação (800ms) para limpar a DOM
     const timer = setTimeout(() => {
-      onComplete(item.id);
+      if (onComplete && item?.id) {
+        onComplete(item.id);
+      }
     }, 800);
 
     return () => {
       cancelAnimationFrame(rafId);
       clearTimeout(timer);
     };
-  }, [item.id, onComplete]);
+  }, [item, onComplete]);
+
+  if (!item || typeof item.startX !== 'number' || typeof item.endX !== 'number') {
+    return null;
+  }
 
   return (
     <div
@@ -101,7 +112,7 @@ export function FlyingItem({ item, onComplete }) {
       }}
       className="text-3xl sm:text-4xl filter drop-shadow-xl select-none"
     >
-      {item.emoji}
+      {item.emoji || '💻'}
     </div>
   );
 }
@@ -121,14 +132,15 @@ export function PokerTable({
   onThrowItem = null,
   lastMessage = null,
 }) {
-  const count = participants.length;
+  const safeParticipants = Array.isArray(participants) ? participants.filter(Boolean) : [];
+  const count = safeParticipants.length;
   const internalTableRef = useRef(null);
   const activeTableRef = tableRef || internalTableRef;
 
   // Estado para o popover ativo (qual jogador foi clicado)
   const [activePopover, setActivePopover] = useState(null);
 
-  // Estado temporário para gerir os objetos em voo
+  // Estado temporário para gerir os objetos em voo (inicializado como array vazio)
   const [flyingItems, setFlyingItems] = useState([]);
 
   // Fecha o popover ao clicar fora
@@ -141,41 +153,37 @@ export function PokerTable({
 
   // Remove o item do estado flyingItems após o término da animação (800ms)
   const handleRemoveFlyingItem = useCallback((id) => {
-    setFlyingItems((prev) => prev.filter((item) => item.id !== id));
+    if (!id) return;
+    setFlyingItems((prev) => (Array.isArray(prev) ? prev.filter((item) => item?.id !== id) : []));
   }, []);
 
-  // Captura coordenadas e adiciona novo item ao estado flyingItems
+  // Captura coordenadas e adiciona novo item ao estado flyingItems com cláusula de guarda estrita
   const triggerThrow = useCallback(
     (msg) => {
+      if (!msg) return;
       const source = msg.source || msg.from_user_name;
       const target = msg.target || msg.target_user_name;
       const item = msg.item || '💻';
 
       if (!source || !target) return;
 
-      const sourceEl = document.getElementById(`avatar-${source}`);
-      const targetEl = document.getElementById(`avatar-${target}`);
-      const tableEl = activeTableRef.current;
+      const sourceElement = document.getElementById(`avatar-${source}`);
+      const targetElement = document.getElementById(`avatar-${target}`);
 
-      if (!tableEl) return;
-      const tableRect = tableEl.getBoundingClientRect();
+      // Cláusula de segurança obrigatória contra elementos nulos no DOM
+      if (!sourceElement || !targetElement) return;
 
-      let startX = tableRect.width / 2;
-      let startY = tableRect.height / 2;
-      let endX = tableRect.width / 2;
-      let endY = tableRect.height / 2;
+      const tableElement = activeTableRef?.current;
+      if (!tableElement) return;
 
-      if (sourceEl) {
-        const sRect = sourceEl.getBoundingClientRect();
-        startX = sRect.left + sRect.width / 2 - tableRect.left;
-        startY = sRect.top + sRect.height / 2 - tableRect.top;
-      }
+      const tableRect = tableElement.getBoundingClientRect();
+      const sourceRect = sourceElement.getBoundingClientRect();
+      const targetRect = targetElement.getBoundingClientRect();
 
-      if (targetEl) {
-        const tRect = targetEl.getBoundingClientRect();
-        endX = tRect.left + tRect.width / 2 - tableRect.left;
-        endY = tRect.top + tRect.height / 2 - tableRect.top;
-      }
+      const startX = sourceRect.left + sourceRect.width / 2 - tableRect.left;
+      const startY = sourceRect.top + sourceRect.height / 2 - tableRect.top;
+      const endX = targetRect.left + targetRect.width / 2 - tableRect.left;
+      const endY = targetRect.top + targetRect.height / 2 - tableRect.top;
 
       const newItem = {
         id: Date.now() + Math.random(),
@@ -186,7 +194,7 @@ export function PokerTable({
         endY,
       };
 
-      setFlyingItems((prev) => [...prev, newItem]);
+      setFlyingItems((prev) => (Array.isArray(prev) ? [...prev, newItem] : [newItem]));
     },
     [activeTableRef]
   );
@@ -201,10 +209,10 @@ export function PokerTable({
     }
   }, [lastMessage, triggerThrow]);
 
-  // Ouve eventos customizados da window (chaos_throw_item) para facilidade de integração e testes
+  // Ouve eventos customizados da window (chaos_throw_item) para testes e flexibilidade
   useEffect(() => {
     const handleChaosEvent = (e) => {
-      if (e.detail) {
+      if (e?.detail) {
         triggerThrow(e.detail);
       }
     };
@@ -226,8 +234,8 @@ export function PokerTable({
   };
 
   // Média dos votos revelados: ignora votos não numéricos ('?', null etc.)
-  const numericVotes = participants
-    .map((p) => p.vote)
+  const numericVotes = safeParticipants
+    .map((p) => p?.vote)
     .filter((v) => typeof v === 'number' && Number.isFinite(v));
   const average =
     numericVotes.length > 0
@@ -235,9 +243,10 @@ export function PokerTable({
       : null;
 
   // Agrupa os nomes dos jogadores pela carta escolhida: { 5: ['Matheus', 'João'], 8: ['Carol'] }
-  const votesByCard = participants.reduce((acc, p) => {
-    if (p.vote !== null && p.vote !== undefined) {
-      (acc[p.vote] = acc[p.vote] || []).push(p.user_name);
+  const votesByCard = safeParticipants.reduce((acc, p) => {
+    if (p && p.vote !== null && p.vote !== undefined) {
+      const name = p.user_name || p.name || 'Anônimo';
+      (acc[p.vote] = acc[p.vote] || []).push(name);
     }
     return acc;
   }, {});
@@ -266,17 +275,22 @@ export function PokerTable({
       <div className="absolute inset-3 sm:inset-5 md:inset-7 rounded-[45px] sm:rounded-[85px] md:rounded-[125px] border border-dashed border-white/20 pointer-events-none" />
 
       {/* Objetos em voo (Chaos Engine) */}
-      {flyingItems.map((item) => (
-        <FlyingItem
-          key={item.id}
-          item={item}
-          onComplete={handleRemoveFlyingItem}
-        />
-      ))}
+      {(flyingItems || []).map((item) => {
+        if (!item?.id) return null;
+        return (
+          <FlyingItem
+            key={item.id}
+            item={item}
+            onComplete={handleRemoveFlyingItem}
+          />
+        );
+      })}
 
       {/* Participantes espalhados nas bordas via trigonometria */}
-      {participants.map((player, index) => {
-        const angle = count === 1 ? Math.PI / 2 : (2 * Math.PI * index) / count - Math.PI / 2;
+      {safeParticipants.map((player, index) => {
+        if (!player) return null;
+
+        const angle = count <= 1 ? Math.PI / 2 : (2 * Math.PI * index) / count - Math.PI / 2;
         const rx = 44;
         const ry = 41;
         const left = 50 + rx * Math.cos(angle);
@@ -286,11 +300,11 @@ export function PokerTable({
         const isReady = hasVoted && !votesRevealed;
         const voteValue = player.vote ?? (player.isCurrent ? currentVote : null);
 
-        // Verificação se o jogador em questão é Scrum Master
-        const isScrumMaster = Boolean(player.is_master || (player.isCurrent && isMaster));
-        const playerName = player.name || player.user_name || `player-${index}`;
+        // Verificação defensiva se o jogador em questão é Scrum Master
+        const isScrumMaster = Boolean(player?.is_master || (player?.isCurrent && Boolean(isMaster)));
+        const playerName = player?.name || player?.user_name || (player?.user_id ? String(player.user_id) : `player-${index}`);
         const isSelf = Boolean(
-          player.isCurrent || (currentUserName && playerName === currentUserName)
+          player?.isCurrent || (currentUserName && playerName === currentUserName)
         );
 
         return (
@@ -314,9 +328,9 @@ export function PokerTable({
 
             {/* Div principal do avatar com atributo id para localização no DOM */}
             <div
-              id={`avatar-${player.name || player.user_name}`}
+              id={`avatar-${playerName}`}
               onClick={(e) => {
-                e.stopPropagation();
+                e?.stopPropagation?.();
                 // Exibe menu flutuante quando o utilizador clicar no avatar de outro jogador
                 if (!isSelf) {
                   setActivePopover((prev) => (prev === playerName ? null : playerName));
@@ -607,24 +621,29 @@ export function Room() {
   };
 
   // Garante que a lista de participantes exiba o usuário atual de forma reativa
+  // Garante que a lista de participantes exiba o usuário atual de forma reativa e segura
   const participants = (() => {
-    if (roomState.participants && roomState.participants.length > 0) {
+    if (roomState?.participants && roomState.participants.length > 0) {
       return roomState.participants.map((p) => {
-        const isCurrent = p.user_id === userId;
+        const isCurrent = Boolean(userId && p?.user_id === userId);
+        const resolvedName = isCurrent ? currentUserName : (p?.user_name || p?.name || 'Jogador');
         return {
           ...p,
           isCurrent,
-          user_name: isCurrent ? currentUserName : p.user_name,
+          user_name: resolvedName,
+          name: resolvedName,
+          is_master: Boolean(p?.is_master || (isCurrent && isMaster)),
         };
       });
     }
     return [
       {
-        user_id: userId,
-        user_name: currentUserName,
+        user_id: userId || 'local_user',
+        user_name: currentUserName || 'Eu',
+        name: currentUserName || 'Eu',
         has_voted: selectedCard !== null,
         vote: selectedCard,
-        is_master: isMaster,
+        is_master: Boolean(isMaster),
         isCurrent: true,
       },
     ];
