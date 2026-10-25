@@ -25,45 +25,14 @@ import { usePokerSocket } from '../hooks/usePokerSocket';
 // Escala estrita da regra de negócio (Fibonacci)
 export const POKER_CARDS = [1, 2, 3, 5, 8, 13];
 
-// Biblioteca de personagens temáticos (emojis)
-export const AVATAR_PRESETS = ['🐱', '🎮', '🖨️', '💻', '🧙‍♂️', '🤖', '👾', '🚀'];
-
-// Paleta de gradientes para o fundo dos avatares
-const AVATAR_BG_GRADIENTS = [
-  'from-indigo-500/20 to-indigo-600/30 border-indigo-400/40',
-  'from-emerald-500/20 to-emerald-600/30 border-emerald-400/40',
-  'from-amber-500/20 to-amber-600/30 border-amber-400/40',
-  'from-rose-500/20 to-rose-600/30 border-rose-400/40',
-  'from-violet-500/20 to-violet-600/30 border-violet-400/40',
-  'from-cyan-500/20 to-cyan-600/30 border-cyan-400/40',
-  'from-fuchsia-500/20 to-fuchsia-600/30 border-fuchsia-400/40',
-  'from-blue-500/20 to-blue-600/30 border-blue-400/40',
-];
-
-export function getAvatarBgGradient(identifier = '') {
-  let hash = 0;
-  for (let i = 0; i < identifier.length; i++) {
-    hash = identifier.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return AVATAR_BG_GRADIENTS[Math.abs(hash) % AVATAR_BG_GRADIENTS.length];
-}
-
-export function getDefaultAvatar(identifier = '') {
-  const seed = String(identifier || '');
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = seed.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return AVATAR_PRESETS[Math.abs(hash) % AVATAR_PRESETS.length];
-}
-
 // Formata a média: inteiro sem casas decimais; quebrado com no máximo uma casa
 export function formatAverage(value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 /**
- * Componente da Mesa de Poker com avatares de personagens distribuídos trigonometricamente.
+ * Componente da Mesa de Poker com participantes distribuídos trigonometricamente ao redor da mesa.
+ * Renderiza ícones padronizados por papel: Coroa (👑) para Scrum Master e Silhueta (👤) para jogador comum.
  */
 export function PokerTable({
   participants = [],
@@ -72,7 +41,6 @@ export function PokerTable({
   currentVote = null,
   tableRef = null,
   isMaster = false,
-  onCurrentAvatarClick = null,
 }) {
   const count = participants.length;
 
@@ -116,7 +84,7 @@ export function PokerTable({
       {/* Linha interna decorativa tracejada */}
       <div className="absolute inset-3 sm:inset-5 md:inset-7 rounded-[45px] sm:rounded-[85px] md:rounded-[125px] border border-dashed border-white/20 pointer-events-none" />
 
-      {/* Avatares dos Jogadores espalhados nas bordas via trigonometria */}
+      {/* Participantes espalhados nas bordas via trigonometria */}
       {participants.map((player, index) => {
         const angle = count === 1 ? Math.PI / 2 : (2 * Math.PI * index) / count - Math.PI / 2;
         const rx = 44;
@@ -127,7 +95,9 @@ export function PokerTable({
         const hasVoted = Boolean(player.has_voted || (currentVote !== null && player.isCurrent));
         const isReady = hasVoted && !votesRevealed;
         const voteValue = player.vote ?? (player.isCurrent ? currentVote : null);
-        const avatarEmoji = player.avatar || getDefaultAvatar(player.user_name || player.user_id);
+
+        // Verificação se o jogador em questão é Scrum Master
+        const isScrumMaster = Boolean(player.is_master || (player.isCurrent && isMaster));
 
         return (
           <div
@@ -140,20 +110,12 @@ export function PokerTable({
             className="absolute z-20 flex flex-col items-center select-none"
           >
             <div className="relative group">
-              {/* Círculo do Avatar com EMOJI CENTRALIZADO */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (player.isCurrent && onCurrentAvatarClick) {
-                    onCurrentAvatarClick();
-                  }
-                }}
-                disabled={!player.isCurrent}
+              {/* Círculo do Avatar com fundo sólido neutro e ícone padronizado por papel */}
+              <div
                 className={`
                   w-11 h-11 sm:w-13 sm:h-13 md:w-15 md:h-15 rounded-full
-                  bg-gradient-to-tr ${getAvatarBgGradient(player.user_name || player.user_id || String(index))}
-                  bg-white/80 dark:bg-slate-900/80 backdrop-blur-md
-                  border-2 sm:border-3 border-white dark:border-slate-700
+                  bg-gray-700 text-white
+                  border-2 sm:border-3 border-gray-600 dark:border-gray-500
                   shadow-lg flex items-center justify-center
                   text-2xl sm:text-3xl md:text-3.5xl
                   transition-all duration-200
@@ -162,34 +124,13 @@ export function PokerTable({
                       ? 'ring-4 ring-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.85)]'
                       : ''
                   }
-                  ${
-                    player.isCurrent
-                      ? 'cursor-pointer hover:scale-115 hover:ring-4 hover:ring-emerald-400 active:scale-95'
-                      : 'cursor-default'
-                  }
                 `}
-                title={player.isCurrent ? 'Clique para trocar seu avatar' : player.user_name}
+                title={isScrumMaster ? `${player.user_name} (Scrum Master)` : player.user_name}
               >
-                <span className="filter drop-shadow-sm leading-none">{avatarEmoji}</span>
-              </button>
-
-              {/* Dica para o usuário atual trocar o avatar */}
-              {player.isCurrent && (
-                <div
-                  onClick={() => onCurrentAvatarClick && onCurrentAvatarClick()}
-                  className="absolute -bottom-1 -left-1 bg-emerald-500 text-white p-1 rounded-full shadow-md cursor-pointer hover:scale-110 transition"
-                  title="Trocar avatar"
-                >
-                  <Pencil className="w-2.5 h-2.5" />
-                </div>
-              )}
-
-              {/* Coroa do Scrum Master */}
-              {player.is_master && (
-                <div className="absolute -top-2.5 -right-1 bg-amber-400 text-amber-950 p-1 rounded-full shadow-md pointer-events-none">
-                  <Crown className="w-3 h-3" />
-                </div>
-              )}
+                <span className="filter drop-shadow-sm leading-none select-none">
+                  {isScrumMaster ? '👑' : '👤'}
+                </span>
+              </div>
 
               {/* Carta Pequena ao lado do avatar quando o jogador votou */}
               <AnimatePresence>
@@ -344,13 +285,6 @@ export function Room() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(initialUserName);
 
-  // Avatar escolhido manualmente (null => avatar padrão determinístico derivado do user_id,
-  // idêntico em todos os clientes)
-  const [currentAvatar, setCurrentAvatar] = useState(() => {
-    return sessionStorage.getItem('chaosplanning_avatar') || null;
-  });
-  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
-
   // Hook de conexão WebSocket (só conecta depois de haver um apelido)
   const { isConnected, connectionError, roomState, userId, sendVote, sendProfileUpdate, revealVotes, clearVotes, resetVotes } =
     usePokerSocket(roomId, currentUserName, masterToken);
@@ -370,14 +304,6 @@ export function Room() {
     }
   }, [isEditingName]);
 
-  // Ao conectar, publica o avatar escolhido anteriormente para que os demais o vejam igual
-  useEffect(() => {
-    if (isConnected && currentAvatar) {
-      sendProfileUpdate(currentUserName, currentAvatar);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected]);
-
   // Reseta seleção de voto se a mesa foi limpa pelo Master
   useEffect(() => {
     if (!roomState.votesRevealed && roomState.totalVotes === 0) {
@@ -393,21 +319,11 @@ export function Room() {
     if (trimmed && trimmed !== currentUserName) {
       setCurrentUserName(trimmed);
       sessionStorage.setItem('chaosplanning_user_name', trimmed);
-      sendProfileUpdate(trimmed, currentAvatar);
+      sendProfileUpdate(trimmed);
     } else {
       setTempName(currentUserName);
     }
     setIsEditingName(false);
-  };
-
-  /**
-   * Seleciona um novo avatar emoji e transmite update_profile via WebSocket
-   */
-  const handleSelectAvatar = (emoji) => {
-    setCurrentAvatar(emoji);
-    sessionStorage.setItem('chaosplanning_avatar', emoji);
-    sendProfileUpdate(currentUserName, emoji);
-    setIsAvatarModalOpen(false);
   };
 
   /**
@@ -456,26 +372,22 @@ export function Room() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Garante que a lista de participantes exiba o usuário atual com seu avatar e nome reativos
+  // Garante que a lista de participantes exiba o usuário atual de forma reativa
   const participants = (() => {
     if (roomState.participants && roomState.participants.length > 0) {
       return roomState.participants.map((p) => {
         const isCurrent = p.user_id === userId;
-        const fallbackAvatar = getDefaultAvatar(isCurrent ? currentUserName : p.user_name);
         return {
           ...p,
           isCurrent,
           user_name: isCurrent ? currentUserName : p.user_name,
-          avatar: isCurrent ? currentAvatar || p.avatar || fallbackAvatar : p.avatar || fallbackAvatar,
         };
       });
     }
-    const defaultOwnAvatar = currentAvatar || getDefaultAvatar(currentUserName);
     return [
       {
         user_id: userId,
         user_name: currentUserName,
-        avatar: defaultOwnAvatar,
         has_voted: selectedCard !== null,
         vote: selectedCard,
         is_master: isMaster,
@@ -586,75 +498,7 @@ export function Room() {
         )}
       </AnimatePresence>
 
-      {/* Modal / Popover de Seleção de Avatar (Biblioteca de Personagens) */}
-      <AnimatePresence>
-        {isAvatarModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 15 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 15 }}
-              className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-5"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-emerald-500" />
-                  <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
-                    Escolha seu Personagem
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAvatarModalOpen(false)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
 
-              <p className="text-xs text-slate-500 dark:text-slate-400 my-3">
-                Selecione o avatar que irá representá-lo na mesa de votação:
-              </p>
-
-              {/* Grid dos Emojis Solicitados: 🐱, 🎮, 🖨️, 💻, 🧙‍♂️, 🤖, 👾, 🚀 */}
-              <div className="grid grid-cols-4 gap-3 py-2">
-                {AVATAR_PRESETS.map((emoji) => {
-                  const isSelected = currentAvatar === emoji;
-                  return (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => handleSelectAvatar(emoji)}
-                      className={`
-                        w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center
-                        text-3xl sm:text-3.5xl transition-all duration-150 select-none
-                        ${
-                          isSelected
-                            ? 'bg-emerald-100 dark:bg-emerald-950/80 ring-4 ring-emerald-500 scale-105 shadow-md'
-                            : 'bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 hover:scale-110 shadow-sm'
-                        }
-                      `}
-                      title={emoji}
-                    >
-                      {emoji}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setIsAvatarModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                >
-                  Fechar
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* Cabeçalho */}
       <header className="w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3 flex items-center justify-between z-20">
@@ -769,7 +613,7 @@ export function Room() {
           modes={roomState.modes}
           currentVote={selectedCard}
           tableRef={tableRef}
-          onCurrentAvatarClick={() => setIsAvatarModalOpen(true)}
+          isMaster={isMaster}
         />
       </main>
 
