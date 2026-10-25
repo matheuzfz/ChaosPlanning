@@ -113,6 +113,26 @@ async def websocket_room_endpoint(
         while True:
             data = await websocket.receive_json()
             try:
+                # Evento volátil 'throw_item':
+                # Mensagem esperada: {"type": "throw_item", "source": "nome_A", "target": "nome_B", "item": "💻"}
+                # Broadcast imediato para todos na sala sem alterar o estado da sala.
+                if data.get("type") == "throw_item" or data.get("action") == "throw_item":
+                    if "target_user_id" in data and "target" not in data:
+                        payload = WebSocketActionPayload.model_validate(data)
+                        if not payload.target_user_id or not payload.item:
+                            raise ValueError(
+                                "Os campos 'target_user_id' e 'item' são obrigatórios para a ação 'throw_item'."
+                            )
+                        await room_manager.throw_item(
+                            room_id=room_id,
+                            from_user_id=user_id,
+                            target_user_id=payload.target_user_id,
+                            item=payload.item,
+                        )
+                    else:
+                        await room_manager.broadcast(room_id=room_id, message=data)
+                    continue
+
                 payload = WebSocketActionPayload.model_validate(data)
                 action = payload.action
 
@@ -147,18 +167,6 @@ async def websocket_room_endpoint(
                     await room_manager.reset_votes(
                         room_id=room_id,
                         master_token=effective_token,
-                    )
-
-                elif action == "throw_item":
-                    if not payload.target_user_id or not payload.item:
-                        raise ValueError(
-                            "Os campos 'target_user_id' e 'item' são obrigatórios para a ação 'throw_item'."
-                        )
-                    await room_manager.throw_item(
-                        room_id=room_id,
-                        from_user_id=user_id,
-                        target_user_id=payload.target_user_id,
-                        item=payload.item,
                     )
 
                 elif action == "update_profile":

@@ -136,14 +136,16 @@ export function usePokerSocket(roomId, userName, masterToken = null) {
 
   /**
    * Envia o evento de arremesso de item no usuário alvo.
-   * @param {string} target - ID do usuário de destino
-   * @param {string} item - Identificador do item
+   * @param {string} target - Nome do usuário de destino
+   * @param {string} item - Identificador/emoji do item
+   * @param {string} [source] - Nome do remetente
    */
-  const throwItem = useCallback((target, item) => {
+  const throwItem = useCallback((target, item, source) => {
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       const payload = {
-        action: 'throw_item',
-        target_user_id: target,
+        type: 'throw_item',
+        source: source || userNameRef.current,
+        target: target,
         item: item,
       };
       console.log('[usePokerSocket] Arremessando item:', payload);

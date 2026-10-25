@@ -30,9 +30,85 @@ export function formatAverage(value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+// Opções de arremesso de itens de caos (ChaosPlanning)
+export const CHAOS_ITEMS = [
+  { emoji: '🧻', label: 'Papel' },
+  { emoji: '🪑', label: 'Cadeira' },
+  { emoji: '🎯', label: 'Dardo' },
+  { emoji: '💻', label: 'Laptop' },
+];
+
+/**
+ * Menu flutuante (popover) para selecionar um item para arremessar
+ */
+export function ItemThrowPopover({ targetName, onSelect, onClose }) {
+  return (
+    <div
+      className="absolute -top-12 sm:-top-14 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-900/95 dark:bg-slate-800/95 border border-slate-700/60 shadow-[0_10px_30px_rgba(0,0,0,0.5)] backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 select-none pointer-events-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {CHAOS_ITEMS.map(({ emoji, label }) => (
+        <button
+          key={emoji}
+          type="button"
+          title={`Atirar ${label} em ${targetName}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(emoji);
+          }}
+          className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-lg sm:text-xl bg-slate-800/80 hover:bg-slate-700 dark:hover:bg-slate-600 hover:scale-125 active:scale-95 transition-all duration-150 cursor-pointer shadow-sm"
+        >
+          {emoji}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Componente do objeto em voo animado através de transições CSS com rotação
+ */
+export function FlyingItem({ item, onComplete }) {
+  const [active, setActive] = useState(false);
+
+  useEffect(() => {
+    // Força reflow no próximo frame para disparar a transição CSS
+    const rafId = requestAnimationFrame(() => {
+      setActive(true);
+    });
+
+    // Remove o item após a duração da animação (800ms) para limpar a DOM
+    const timer = setTimeout(() => {
+      onComplete(item.id);
+    }, 800);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timer);
+    };
+  }, [item.id, onComplete]);
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `${active ? item.endX : item.startX}px`,
+        top: `${active ? item.endY : item.startY}px`,
+        transform: `translate(-50%, -50%) rotate(${active ? 720 : 0}deg) scale(${active ? 1.3 : 0.8})`,
+        transition: 'all 0.8s ease-in-out',
+        pointerEvents: 'none',
+        zIndex: 50,
+      }}
+      className="text-3xl sm:text-4xl filter drop-shadow-xl select-none"
+    >
+      {item.emoji}
+    </div>
+  );
+}
+
 /**
  * Componente da Mesa de Poker com participantes distribuídos trigonometricamente ao redor da mesa.
- * Renderiza ícones padronizados por papel: Coroa (👑) para Scrum Master e Silhueta (👤) para jogador comum.
+ * Inclui motor de arremesso de itens voláteis (Chaos Engine) e menu popover ao clicar nos avatares.
  */
 export function PokerTable({
   participants = [],
@@ -41,8 +117,113 @@ export function PokerTable({
   currentVote = null,
   tableRef = null,
   isMaster = false,
+  currentUserName = '',
+  onThrowItem = null,
+  lastMessage = null,
 }) {
   const count = participants.length;
+  const internalTableRef = useRef(null);
+  const activeTableRef = tableRef || internalTableRef;
+
+  // Estado para o popover ativo (qual jogador foi clicado)
+  const [activePopover, setActivePopover] = useState(null);
+
+  // Estado temporário para gerir os objetos em voo
+  const [flyingItems, setFlyingItems] = useState([]);
+
+  // Fecha o popover ao clicar fora
+  useEffect(() => {
+    if (!activePopover) return;
+    const handleGlobalClick = () => setActivePopover(null);
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, [activePopover]);
+
+  // Remove o item do estado flyingItems após o término da animação (800ms)
+  const handleRemoveFlyingItem = useCallback((id) => {
+    setFlyingItems((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  // Captura coordenadas e adiciona novo item ao estado flyingItems
+  const triggerThrow = useCallback(
+    (msg) => {
+      const source = msg.source || msg.from_user_name;
+      const target = msg.target || msg.target_user_name;
+      const item = msg.item || '💻';
+
+      if (!source || !target) return;
+
+      const sourceEl = document.getElementById(`avatar-${source}`);
+      const targetEl = document.getElementById(`avatar-${target}`);
+      const tableEl = activeTableRef.current;
+
+      if (!tableEl) return;
+      const tableRect = tableEl.getBoundingClientRect();
+
+      let startX = tableRect.width / 2;
+      let startY = tableRect.height / 2;
+      let endX = tableRect.width / 2;
+      let endY = tableRect.height / 2;
+
+      if (sourceEl) {
+        const sRect = sourceEl.getBoundingClientRect();
+        startX = sRect.left + sRect.width / 2 - tableRect.left;
+        startY = sRect.top + sRect.height / 2 - tableRect.top;
+      }
+
+      if (targetEl) {
+        const tRect = targetEl.getBoundingClientRect();
+        endX = tRect.left + tRect.width / 2 - tableRect.left;
+        endY = tRect.top + tRect.height / 2 - tableRect.top;
+      }
+
+      const newItem = {
+        id: Date.now() + Math.random(),
+        emoji: item,
+        startX,
+        startY,
+        endX,
+        endY,
+      };
+
+      setFlyingItems((prev) => [...prev, newItem]);
+    },
+    [activeTableRef]
+  );
+
+  // Reage a eventos throw_item recebidos do WebSocket
+  useEffect(() => {
+    if (
+      lastMessage &&
+      (lastMessage.type === 'throw_item' || lastMessage.event === 'throw_item')
+    ) {
+      triggerThrow(lastMessage);
+    }
+  }, [lastMessage, triggerThrow]);
+
+  // Ouve eventos customizados da window (chaos_throw_item) para facilidade de integração e testes
+  useEffect(() => {
+    const handleChaosEvent = (e) => {
+      if (e.detail) {
+        triggerThrow(e.detail);
+      }
+    };
+    window.addEventListener('chaos_throw_item', handleChaosEvent);
+    return () => window.removeEventListener('chaos_throw_item', handleChaosEvent);
+  }, [triggerThrow]);
+
+  // Ao clicar num item, fecha o menu e envia o evento throw_item via WebSocket
+  const handleItemSelect = (emoji, targetPlayerName) => {
+    setActivePopover(null);
+    if (onThrowItem) {
+      onThrowItem({
+        type: 'throw_item',
+        source: currentUserName,
+        target: targetPlayerName,
+        item: emoji,
+      });
+    }
+  };
 
   // Média dos votos revelados: ignora votos não numéricos ('?', null etc.)
   const numericVotes = participants
@@ -66,7 +247,7 @@ export function PokerTable({
 
   return (
     <div
-      ref={tableRef}
+      ref={activeTableRef}
       className={`
         relative w-full aspect-[16/9] sm:aspect-[2/1] max-w-4xl max-h-[56vh] min-h-[250px] sm:min-h-[310px]
         rounded-[65px] sm:rounded-[110px] md:rounded-[150px]
@@ -84,6 +265,15 @@ export function PokerTable({
       {/* Linha interna decorativa tracejada */}
       <div className="absolute inset-3 sm:inset-5 md:inset-7 rounded-[45px] sm:rounded-[85px] md:rounded-[125px] border border-dashed border-white/20 pointer-events-none" />
 
+      {/* Objetos em voo (Chaos Engine) */}
+      {flyingItems.map((item) => (
+        <FlyingItem
+          key={item.id}
+          item={item}
+          onComplete={handleRemoveFlyingItem}
+        />
+      ))}
+
       {/* Participantes espalhados nas bordas via trigonometria */}
       {participants.map((player, index) => {
         const angle = count === 1 ? Math.PI / 2 : (2 * Math.PI * index) / count - Math.PI / 2;
@@ -98,6 +288,10 @@ export function PokerTable({
 
         // Verificação se o jogador em questão é Scrum Master
         const isScrumMaster = Boolean(player.is_master || (player.isCurrent && isMaster));
+        const playerName = player.name || player.user_name || `player-${index}`;
+        const isSelf = Boolean(
+          player.isCurrent || (currentUserName && playerName === currentUserName)
+        );
 
         return (
           <div
@@ -109,7 +303,37 @@ export function PokerTable({
             }}
             className="absolute z-20 flex flex-col items-center select-none"
           >
-            <div className="relative group">
+            {/* Popover flutuante para escolha do item de arremesso */}
+            {activePopover === playerName && (
+              <ItemThrowPopover
+                targetName={playerName}
+                onSelect={(emoji) => handleItemSelect(emoji, playerName)}
+                onClose={() => setActivePopover(null)}
+              />
+            )}
+
+            {/* Div principal do avatar com atributo id para localização no DOM */}
+            <div
+              id={`avatar-${player.name || player.user_name}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                // Exibe menu flutuante quando o utilizador clicar no avatar de outro jogador
+                if (!isSelf) {
+                  setActivePopover((prev) => (prev === playerName ? null : playerName));
+                }
+              }}
+              className={`
+                relative group
+                ${!isSelf ? 'cursor-pointer hover:scale-105 active:scale-95 transition-transform' : 'cursor-default'}
+              `}
+              title={
+                !isSelf
+                  ? `Clique para atirar um item em ${playerName}`
+                  : isScrumMaster
+                  ? `${playerName} (Scrum Master)`
+                  : playerName
+              }
+            >
               {/* Círculo do Avatar com fundo sólido neutro e ícone padronizado por papel */}
               <div
                 className={`
@@ -125,7 +349,6 @@ export function PokerTable({
                       : ''
                   }
                 `}
-                title={isScrumMaster ? `${player.user_name} (Scrum Master)` : player.user_name}
               >
                 <span className="filter drop-shadow-sm leading-none select-none">
                   {isScrumMaster ? '👑' : '👤'}
@@ -177,7 +400,7 @@ export function PokerTable({
 
             {/* Nome do Jogador */}
             <span className="mt-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-semibold bg-slate-900/80 text-white backdrop-blur-sm shadow max-w-[85px] sm:max-w-[105px] truncate">
-              {player.user_name}
+              {playerName}
             </span>
 
             {/* Badge de status: já votou (cartas ainda ocultas) */}
@@ -286,8 +509,19 @@ export function Room() {
   const [tempName, setTempName] = useState(initialUserName);
 
   // Hook de conexão WebSocket (só conecta depois de haver um apelido)
-  const { isConnected, connectionError, roomState, userId, sendVote, sendProfileUpdate, revealVotes, clearVotes, resetVotes } =
-    usePokerSocket(roomId, currentUserName, masterToken);
+  const {
+    isConnected,
+    connectionError,
+    roomState,
+    userId,
+    sendVote,
+    sendProfileUpdate,
+    revealVotes,
+    clearVotes,
+    resetVotes,
+    lastMessage,
+    socketRef,
+  } = usePokerSocket(roomId, currentUserName, masterToken);
 
   const [selectedCard, setSelectedCard] = useState(null);
   const [flyingCard, setFlyingCard] = useState(null);
@@ -614,6 +848,13 @@ export function Room() {
           currentVote={selectedCard}
           tableRef={tableRef}
           isMaster={isMaster}
+          currentUserName={currentUserName}
+          onThrowItem={(throwData) => {
+            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+              socketRef.current.send(JSON.stringify(throwData));
+            }
+          }}
+          lastMessage={lastMessage}
         />
       </main>
 
